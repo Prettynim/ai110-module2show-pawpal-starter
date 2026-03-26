@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \":*)",
+      "Bash(python main.py)",
+      "Bash(cd \"C:\\\\Users\\\\sgwck\\\\Desktop\\\\ai110-module2show-pawpal-starter\" && python main.py 2>&1 | findstr /n \".\")",
+      "Bash(cd \"C:\\\\Users\\\\sgwck\\\\Desktop\\\\ai110-module2show-pawpal-starter\" && python -m pytest tests/test_pawpal.py -v 2>&1)",
+      "Bash(cd \"C:\\\\Users\\\\sgwck\\\\Desktop\\\\ai110-module2show-pawpal-starter\" && mmdc -i uml_final.mmd -o uml_final.png -b white 2>&1)",
+      "Bash(cd \"C:\\\\Users\\\\sgwck\\\\Desktop\\\\ai110-module2show-pawpal-starter\" && where mmdc 2>&1 && where npx 2>&1)",
+      "Bash(cd \"C:\\\\Users\\\\sgwck\\\\Desktop\\\\ai110-module2show-pawpal-starter\" && npx -y @mermaid-js/mermaid-cli mmdc -i uml_final.mmd -o uml_final.png -b white 2>&1)",
+      "Bash(cd \"C:\\\\Users\\\\sgwck\\\\Desktop\\\\ai110-module2show-pawpal-starter\" && npx -y @mermaid-js/mermaid-cli -i uml_final.mmd -o uml_final.png -b white 2>&1)",
+      "Bash(cd \"C:\\\\Users\\\\sgwck\\\\Desktop\\\\ai110-module2show-pawpal-starter\" && python -m pytest tests/test_pawpal.py -v 2>&1 | tail -30)",
+      "Bash(cd \"C:\\\\Users\\\\sgwck\\\\Desktop\\\\ai110-module2show-pawpal-starter\" && python -m pytest tests/test_pawpal.py -q 2>&1 | tail -5)",
+      "Bash(cd \"C:\\\\Users\\\\sgwck\\\\Desktop\\\\ai110-module2show-pawpal-starter\" && python -m pytest tests/test_pawpal.py -q 2>&1)",
+      "Bash(cd \"C:\\\\Users\\\\sgwck\\\\Desktop\\\\ai110-module2show-pawpal-starter\" && python -c \"import ast; ast.parse\\(open\\('app.py'\\).read\\(\\)\\); print\\('app.py syntax OK'\\)\")",
+      "Bash(cd \"C:\\\\Users\\\\sgwck\\\\Desktop\\\\ai110-module2show-pawpal-starter\" && python -c \"import ast; ast.parse\\(open\\('app.py', encoding='utf-8'\\).read\\(\\)\\); print\\('app.py syntax OK'\\)\")",
+      "Bash(claude doctor:*)",
+      "Bash(python -m pytest -v)"
+    ]
+  }
+}
