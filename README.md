@@ -1,26 +1,52 @@
 # PawPal+ (Module 2 Project)
 
-You are building **PawPal+**, a Streamlit app that helps a pet owner plan care tasks for their pet.
+**PawPal+** is a Streamlit app that helps a busy pet owner stay on top of daily care. It schedules tasks intelligently, warns about time conflicts, and automatically re-queues recurring activities so nothing gets forgotten.
 
-## Scenario
+---
 
-A busy pet owner needs help staying consistent with pet care. They want an assistant that can:
+## 📸 Demo
 
-- Track pet care tasks (walks, feeding, meds, enrichment, grooming, etc.)
-- Consider constraints (time available, priority, owner preferences)
-- Produce a daily plan and explain why it chose that plan
+<a href="/course_images/ai110/pawpal_screenshot.png" target="_blank"><img src='/course_images/ai110/pawpal_screenshot.png' title='PawPal App' width='' alt='PawPal App' class='center-block' /></a>
 
-Your job is to design the system first (UML), then implement the logic in Python, then connect it to the Streamlit UI.
+---
 
-## What you will build
+## Features
 
-Your final app should:
+### Owner and pet profiles
+Set your name, daily time budget (in minutes), pet name, species, breed, and age. The scheduler uses your time budget as a hard constraint — it never plans more than you have available.
 
-- Let a user enter basic owner + pet info
-- Let a user add/edit tasks (duration + priority at minimum)
-- Generate a daily schedule/plan based on constraints and priorities
-- Display the plan clearly (and ideally explain the reasoning)
-- Include tests for the most important scheduling behaviors
+### Priority-based scheduling
+Tasks carry a priority level (High / Medium / Low). The daily plan is built greedily: highest-priority tasks are scheduled first, and anything that doesn't fit in the remaining time is surfaced as a "skipped" item with a clear explanation.
+
+### Sorting by time
+Any task can be given an optional start time in `HH:MM` format. The task list and the generated schedule both display tasks in chronological order using a `lambda` key sort on the zero-padded time string — no parsing required.
+
+### Filtering
+The task list can be narrowed by category (walk, feed, meds, grooming, enrichment) and by status (pending / completed), individually or combined. A separate filter retrieves all tasks for a named pet across a multi-pet household.
+
+### Recurring task automation
+Each task carries a frequency (`daily`, `weekly`, or `as-needed`). When you mark a daily or weekly task complete, the scheduler automatically creates the next occurrence using Python's `timedelta` — `+1 day` for daily tasks, `+7 days` for weekly — so recurring care is never manually re-entered.
+
+### Day-of-week recurrence filter
+`get_due_tasks(pet, day_of_week)` returns only the tasks due on a given day: daily tasks always appear, weekly tasks appear on Mondays only, and as-needed tasks never auto-populate.
+
+### Conflict detection and warnings
+When two scheduled tasks overlap in time, the app surfaces an orange `st.warning` banner **before** the schedule table so the issue is impossible to miss. The interval overlap test (`A.start < B.end AND B.start < A.end`) catches both exact same-time conflicts and partial overlaps. A cross-pet variant checks all pets in the household simultaneously using `itertools.combinations`.
+
+---
+
+## System architecture
+
+See [`uml_final.png`](uml_final.png) for the full class diagram. Core classes:
+
+| Class | Role |
+|---|---|
+| `Task` | Data: name, category, duration, priority, frequency, start time, due date |
+| `Pet` | Owns a list of `Task` objects; provides pending/all accessors |
+| `Owner` | Holds the time budget; owns one or more `Pet` objects |
+| `Scheduler` | Logic: greedy plan generation, sorting, filtering, recurrence, conflict detection |
+
+---
 
 ## Getting started
 
