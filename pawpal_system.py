@@ -4,6 +4,8 @@ from typing import List
 
 @dataclass
 class Task:
+    """A single pet care activity with a duration, priority, and completion state."""
+
     name: str
     category: str          # "walk", "feed", "meds", "grooming", "enrichment", etc.
     duration_minutes: int
@@ -12,6 +14,7 @@ class Task:
     completed: bool = False
 
     def mark_complete(self) -> None:
+        """Mark this task as completed."""
         self.completed = True
 
     def __str__(self) -> str:
@@ -24,6 +27,8 @@ class Task:
 
 @dataclass
 class Pet:
+    """An animal with a profile and an associated list of care tasks."""
+
     name: str
     species: str
     breed: str
@@ -31,10 +36,11 @@ class Pet:
     tasks: List[Task] = field(default_factory=list)
 
     def add_task(self, task: Task) -> None:
+        """Append a new task to this pet's task list."""
         self.tasks.append(task)
 
     def remove_task(self, task_name: str) -> bool:
-        """Remove a task by name. Returns True if found and removed."""
+        """Remove a task by name (case-insensitive). Returns True if found and removed."""
         for task in self.tasks:
             if task.name.lower() == task_name.lower():
                 self.tasks.remove(task)
@@ -42,9 +48,11 @@ class Pet:
         return False
 
     def get_tasks(self) -> List[Task]:
+        """Return all tasks (completed and pending) for this pet."""
         return self.tasks
 
     def get_pending_tasks(self) -> List[Task]:
+        """Return only tasks that have not yet been completed."""
         return [t for t in self.tasks if not t.completed]
 
     def __str__(self) -> str:
@@ -53,15 +61,19 @@ class Pet:
 
 @dataclass
 class Owner:
+    """A pet owner with a daily time budget and one or more pets."""
+
     name: str
     available_minutes: int
     preferences: List[str] = field(default_factory=list)
     pets: List[Pet] = field(default_factory=list)
 
     def add_pet(self, pet: Pet) -> None:
+        """Add a pet to this owner's household."""
         self.pets.append(pet)
 
     def get_pets(self) -> List[Pet]:
+        """Return all pets belonging to this owner."""
         return self.pets
 
     def get_all_tasks(self) -> List[Task]:
@@ -81,7 +93,10 @@ class Owner:
 
 
 class Scheduler:
+    """Generates a daily care plan for a pet within the owner's available time budget."""
+
     def __init__(self, owner: Owner):
+        """Initialize the scheduler with an owner whose time budget will constrain plans."""
         self.owner = owner
         self.scheduled_tasks: List[Task] = []
         self.skipped_tasks: List[Task] = []
