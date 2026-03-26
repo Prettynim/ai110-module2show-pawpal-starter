@@ -104,8 +104,15 @@ Three changes were made after reviewing the initial skeleton:
 
 **a. Constraints and priorities**
 
-- What constraints does your scheduler consider (for example: time, priority, preferences)?
-- How did you decide which constraints mattered most?
+The scheduler considers two hard constraints and one soft constraint:
+
+1. **Time budget (hard)** — the owner's `available_minutes` is an absolute ceiling. No plan will ever exceed it. This was the first constraint implemented because without it the system could produce a schedule a real person cannot execute.
+
+2. **Task priority (hard ordering)** — tasks are sorted by priority number (1 = most important) before the greedy selection loop runs. This means the scheduler always prefers medication over grooming, not because it knows what medication is, but because the owner explicitly said so. Priority was chosen as the primary ordering key because pet care consequences are uneven: a missed medication is harmful, a missed bath is inconvenient.
+
+3. **Task frequency (soft)** — `get_due_tasks()` filters by day of week so weekly tasks only appear on Mondays and as-needed tasks never auto-populate. This is a soft constraint because the owner can override it by adding any task manually regardless of frequency.
+
+Duration was not used as a constraint for sorting (only for budget arithmetic) because sorting by duration would undermine the priority ordering — a quick low-priority task should not displace a long high-priority one.
 
 **b. Tradeoffs**
 
@@ -128,13 +135,33 @@ The cost is that occasionally a better packing exists but is not found. That is 
 
 **a. How you used AI**
 
-- How did you use AI tools during this project (for example: design brainstorming, debugging, refactoring)?
-- What kinds of prompts or questions were most helpful?
+AI was used across every phase, but the role it played shifted as the project matured:
+
+- **Phase 1 (design)** — used for brainstorming class responsibilities and identifying which methods belonged on which class. The most useful prompt style was constraint-based: "Given that `Task` is a pure data class, which of these methods should live on `Scheduler` instead?" This forced the AI to reason about separation of concerns rather than just generating code.
+
+- **Phase 3–4 (implementation)** — used for generating algorithmic first drafts (sorting, filtering, conflict detection, recurring logic). The most effective prompts were specific and gave the expected input/output: "Write a static method that takes a list of Task objects with optional `start_time: str` in HH:MM format and returns them sorted chronologically, with untimed tasks last." Vague prompts produced generic code that needed heavy rewriting.
+
+- **Phase 4 (refactoring)** — used to evaluate simplification options. Prompting with "What is a more Pythonic way to write this double nested loop?" surfaced `itertools.combinations`, which was both more readable and more correct.
+
+- **Phase 5 (testing)** — used to generate test scaffolding from the test plan. Providing the plan first ("here are the 20 cases I want to cover") produced targeted tests rather than generic coverage filler.
+
+The most consistently helpful question pattern was: **"Here is what I want this to do, here is what I already have — what specifically needs to change?"** Open-ended "write me a scheduler" prompts were the least useful.
 
 **b. Judgment and verification**
 
-- Describe one moment where you did not accept an AI suggestion as-is.
-- How did you evaluate or verify what the AI suggested?
+**Rejected suggestion: storing `start_time` as an integer (minutes from midnight)**
+
+The first implementation stored `start_time` as `Optional[int]` — minutes from midnight (e.g. 480 = 8:00 AM). The AI proposed this because integer arithmetic is faster for the conflict detection math.
+
+This was rejected for two reasons:
+
+1. **Readability of task data.** When a task is printed or displayed in the UI, `"08:30"` is immediately meaningful to a pet owner. `510` is not. The data model is read by humans as often as it is processed by code.
+
+2. **Input and output symmetry.** The Streamlit form accepts `"HH:MM"` text from the user. Storing integers would require converting on input and converting back on display — two opportunities for bugs for no real benefit at this scale.
+
+The fix was to store `"HH:MM"` strings and add a private `_to_minutes(hhmm)` helper inside `Scheduler` for the arithmetic cases only. The conversion stays localized rather than scattered through the model.
+
+Verification method: wrote a test that added tasks with string times, sorted them, and checked the order matched the expected chronological sequence. The test passed with the string approach and would have caught any silent conversion bug.
 
 ---
 
@@ -142,13 +169,21 @@ The cost is that occasionally a better packing exists but is not found. That is 
 
 **a. What you tested**
 
-- What behaviors did you test?
-- Why were these tests important?
+The 38-test suite covers nine behavioral areas: `Task.mark_complete` (including idempotency), `Task.next_occurrence` across all three frequency types, `Pet` task management, `Scheduler` core scheduling (budget, skip, priority order), recurring task auto-creation after completion, `sort_by_time`, `filter_tasks` and `filter_by_pet`, `get_due_tasks` by day of week, and conflict detection (exact overlap, partial overlap, no overlap, untimed tasks, warning string format, cross-pet).
+
+These tests matter because the most dangerous bugs in a scheduler are silent wrong answers — the system runs without crashing but produces a plan the owner cannot actually complete, or misses a medication task, or fires a weekly task every day. The tests are designed to catch that class of error, not just "does the code run."
+
+The test plan was written before the test code, following the Phase 5 Step 1 analysis of happy paths vs. edge cases. This prevented the common pattern of writing tests that only cover the path the implementation already takes.
 
 **b. Confidence**
 
-- How confident are you that your scheduler works correctly?
-- What edge cases would you test next if you had more time?
+**4 / 5** — confident the core logic is correct for single-pet, single-owner use within the tested parameters.
+
+Edge cases to test next with more time:
+- **Exact budget fit** — a set of tasks whose total duration equals `available_minutes` exactly; verify nothing is incorrectly skipped.
+- **Duplicate task names** — `mark_task_complete("Walk")` when two tasks are named "Walk"; the current implementation completes the first match, which may not be the intended one.
+- **`next_occurrence` without `due_date`** — the method falls back to `date.today()` as the base, but this means the due date depends on when the test runs. A test with a fixed date would be more reliable.
+- **Multi-pet scheduling** — the current tests exercise `warn_cross_pet_conflicts` but do not test `generate_plan` called sequentially for two pets from the same owner.
 
 ---
 
@@ -156,12 +191,22 @@ The cost is that occasionally a better packing exists but is not found. That is 
 
 **a. What went well**
 
-- What part of this project are you most satisfied with?
+The most satisfying part is the `mark_task_complete(name, pet)` method and its integration with `next_occurrence()`. It is a small method — about ten lines — but it ties together three phases of work: the `Task` data model (Phase 2), the `timedelta` recurring logic (Phase 4), and the `Scheduler` completion flow (Phase 3). When it worked and a new task appeared in the pet's list with the correct date, it felt like the system was genuinely useful rather than just a demo.
+
+The decision to keep `warn_conflicts` returning strings instead of raising exceptions also went well. It kept the Streamlit UI simple — `if warnings: st.warning(...)` — and made the test for it straightforward. A design that raises errors would have complicated both layers.
 
 **b. What you would improve**
 
-- If you had another iteration, what would you improve or redesign?
+Two things:
+
+1. **`start_time` is optional, which weakens conflict detection.** If an owner adds tasks without times, the conflict checker silently skips them. A better design would either require start times or run a separate "duration-only" overlap estimate for untimed tasks (e.g., if two tasks are both scheduled and their combined duration exceeds the gap between them, warn anyway).
+
+2. **The UI only supports one pet per session.** The backend supports multi-pet households through `Owner.get_pets()` and `warn_cross_pet_conflicts()`, but the Streamlit app only creates one pet in the setup form. Adding a pet management tab would complete the connection between the backend capability and what the user can actually do.
 
 **c. Key takeaway**
 
-- What is one important thing you learned about designing systems or working with AI on this project?
+The most important thing learned: **AI accelerates implementation but cannot set direction.**
+
+At every phase, the quality of the AI's output was directly proportional to the clarity of the design decision made before the prompt was written. When the architecture was ambiguous — "should `is_feasible` go on `Task` or `Scheduler`?" — the AI produced plausible-looking code that embedded the wrong assumption. When the architecture was settled first and the prompt described a specific, bounded problem, the AI produced code that was 80–90% correct on the first attempt.
+
+This means the human's most valuable contribution is not writing code — it is making the design decisions that the AI cannot make alone: which class owns which responsibility, what the right tradeoff is between simplicity and correctness, and when a "more clever" algorithmic suggestion should be rejected in favor of something a future reader can understand. The AI is a fast and capable builder. The lead architect still has to decide what to build.
