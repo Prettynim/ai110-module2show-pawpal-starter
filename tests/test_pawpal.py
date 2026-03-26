@@ -1,3 +1,5 @@
+import os
+import tempfile
 from datetime import date, timedelta
 
 import pytest
@@ -618,3 +620,99 @@ def test_find_next_slot_slot_after_all_tasks():
     # Walk ends 08:30. A 20-min task should start at 08:30.
     slot = Scheduler.find_next_slot(tasks, duration_minutes=20, day_start="08:00")
     assert slot == "08:30"
+
+
+# ---------------------------------------------------------------------------
+# Persistence — save_to_json / load_from_json (Challenge 2)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def tmp_json(tmp_path):
+    """Return a path to a temporary JSON file that doesn't exist yet."""
+    return str(tmp_path / "test_data.json")
+
+
+def test_save_and_load_round_trip(tmp_json):
+    """Saving then loading should reproduce an identical Owner with all fields."""
+    owner = Owner(name="Jordan", available_minutes=75)
+    pet = Pet(name="Buddy", species="Dog", breed="Labrador", age=3)
+    pet.add_task(Task(
+        "Morning walk", "walk", duration_minutes=30, priority=1,
+        frequency="daily", start_time="08:00", due_date=date(2026, 3, 25),
+    ))
+    pet.add_task(Task("Bath", "grooming", duration_minutes=40, priority=4,
+                      frequency="weekly"))
+    owner.add_pet(pet)
+
+    owner.save_to_json(tmp_json)
+    loaded = Owner.load_from_json(tmp_json)
+
+    assert loaded.name == owner.name
+    assert loaded.available_minutes == owner.available_minutes
+    assert len(loaded.get_pets()) == 1
+    loaded_pet = loaded.get_pets()[0]
+    assert loaded_pet.name == "Buddy"
+    assert len(loaded_pet.get_tasks()) == 2
+
+
+def test_due_date_survives_round_trip(tmp_json):
+    """due_date should be restored as a datetime.date, not a plain string."""
+    owner = Owner(name="Alex", available_minutes=60)
+    pet = Pet(name="Rex", species="Dog", breed="Poodle", age=2)
+    today = date(2026, 3, 25)
+    pet.add_task(Task("Walk", "walk", 20, 1, due_date=today))
+    owner.add_pet(pet)
+
+    owner.save_to_json(tmp_json)
+    loaded = Owner.load_from_json(tmp_json)
+
+    restored_task = loaded.get_pets()[0].get_tasks()[0]
+    assert restored_task.due_date == today
+    assert isinstance(restored_task.due_date, date)
+
+
+def test_none_due_date_survives_round_trip(tmp_json):
+    """Tasks with no due_date should reload with due_date still None."""
+    owner = Owner(name="Alex", available_minutes=60)
+    pet = Pet(name="Rex", species="Dog", breed="Poodle", age=2)
+    pet.add_task(Task("Walk", "walk", 20, 1))  # no due_date
+    owner.add_pet(pet)
+
+    owner.save_to_json(tmp_json)
+    loaded = Owner.load_from_json(tmp_json)
+    assert loaded.get_pets()[0].get_tasks()[0].due_date is None
+
+
+def test_completed_flag_survives_round_trip(tmp_json):
+    """A completed task should still be completed after reload."""
+    owner = Owner(name="Alex", available_minutes=60)
+    pet = Pet(name="Rex", species="Dog", breed="Poodle", age=2)
+    task = Task("Walk", "walk", 20, 1)
+    task.mark_complete()
+    pet.add_task(task)
+    owner.add_pet(pet)
+
+    owner.save_to_json(tmp_json)
+    loaded = Owner.load_from_json(tmp_json)
+    assert loaded.get_pets()[0].get_tasks()[0].completed is True
+
+
+def test_load_from_json_raises_for_missing_file():
+    """load_from_json should raise FileNotFoundError for a non-existent path."""
+    with pytest.raises(FileNotFoundError):
+        Owner.load_from_json("definitely_does_not_exist_xyz.json")
+
+
+def test_multiple_pets_survive_round_trip(tmp_json):
+    """An owner with multiple pets should reload all of them."""
+    owner = Owner(name="Jordan", available_minutes=90)
+    owner.add_pet(Pet(name="Buddy", species="Dog", breed="Lab", age=3))
+    owner.add_pet(Pet(name="Luna", species="Cat", breed="Siamese", age=2))
+
+    owner.save_to_json(tmp_json)
+    loaded = Owner.load_from_json(tmp_json)
+
+    assert len(loaded.get_pets()) == 2
+    names = [p.name for p in loaded.get_pets()]
+    assert "Buddy" in names
+    assert "Luna" in names

@@ -1,3 +1,4 @@
+import os
 from datetime import date
 
 import streamlit as st
@@ -6,17 +7,34 @@ from pawpal_system import Task, Pet, Owner, Scheduler
 
 st.set_page_config(page_title="PawPal+", page_icon="🐾", layout="centered")
 
+DATA_FILE = "data.json"
+
+
+def _save() -> None:
+    """Persist the current owner profile to data.json."""
+    if st.session_state.owner:
+        st.session_state.owner.save_to_json(DATA_FILE)
+
+
 # --- Session state initialization ---
-# Streamlit reruns this file on every interaction, so we guard each key with
-# "if not in" to ensure objects are created only once per browser session.
+# On the very first run of a browser session, try to restore from data.json.
+# After that, session_state already has the objects so we skip the load.
 if "owner" not in st.session_state:
-    st.session_state.owner = None
-
-if "pet" not in st.session_state:
-    st.session_state.pet = None
-
-if "scheduler" not in st.session_state:
-    st.session_state.scheduler = None
+    if os.path.exists(DATA_FILE):
+        try:
+            owner = Owner.load_from_json(DATA_FILE)
+            st.session_state.owner = owner
+            st.session_state.pet = owner.get_pets()[0] if owner.get_pets() else None
+            st.session_state.scheduler = Scheduler(owner)
+        except Exception:
+            # Corrupted file — start fresh
+            st.session_state.owner = None
+            st.session_state.pet = None
+            st.session_state.scheduler = None
+    else:
+        st.session_state.owner = None
+        st.session_state.pet = None
+        st.session_state.scheduler = None
 
 # -------------------------------------------------------------------------
 # Section 1: Owner + Pet setup
@@ -48,10 +66,17 @@ if submitted:
     st.session_state.owner = owner
     st.session_state.pet = pet
     st.session_state.scheduler = scheduler
-    st.success(f"Saved! {owner.name}'s pet {pet.name} is ready.")
+    _save()
+    st.success(f"Saved! {owner.name}'s pet {pet.name} is ready. (Profile written to {DATA_FILE})")
 
 if st.session_state.owner:
-    st.caption(f"Current profile: {st.session_state.owner}")
+    task_count = sum(len(p.get_tasks()) for p in st.session_state.owner.get_pets())
+    st.caption(
+        f"Current profile: {st.session_state.owner} | "
+        f"{task_count} task(s) loaded from {DATA_FILE}"
+        if os.path.exists(DATA_FILE) and not submitted
+        else f"Current profile: {st.session_state.owner}"
+    )
 
 st.divider()
 
@@ -113,6 +138,7 @@ if add_task:
             due_date=date.today(),
         )
         st.session_state.pet.add_task(task)
+        _save()
         st.success(f"Added: **{task.name}** ({task.duration_minutes} min, {frequency})")
 
 # --- Task list with sort and filter controls ---

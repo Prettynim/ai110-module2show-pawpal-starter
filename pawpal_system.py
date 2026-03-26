@@ -1,3 +1,5 @@
+import json
+import os
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from itertools import combinations
@@ -50,6 +52,47 @@ class Task:
             due_date=base + delta,
         )
 
+    def to_dict(self) -> dict:
+        """Serialize this Task to a JSON-compatible dictionary.
+
+        ``due_date`` is stored as an ISO-format string (``"YYYY-MM-DD"``) so
+        it survives a round-trip through ``json.dump`` / ``json.load``.
+        ``None`` values are preserved as JSON ``null``.
+        """
+        return {
+            "name": self.name,
+            "category": self.category,
+            "duration_minutes": self.duration_minutes,
+            "priority": self.priority,
+            "frequency": self.frequency,
+            "completed": self.completed,
+            "start_time": self.start_time,
+            "due_date": self.due_date.isoformat() if self.due_date else None,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Task":
+        """Reconstruct a Task from a dictionary produced by ``to_dict()``.
+
+        ``due_date`` is restored from its ISO string via ``date.fromisoformat()``.
+        Unknown keys are ignored so older saved files stay compatible if new
+        optional fields are added later.
+        """
+        return cls(
+            name=data["name"],
+            category=data["category"],
+            duration_minutes=data["duration_minutes"],
+            priority=data["priority"],
+            frequency=data.get("frequency", "daily"),
+            completed=data.get("completed", False),
+            start_time=data.get("start_time"),
+            due_date=(
+                date.fromisoformat(data["due_date"])
+                if data.get("due_date")
+                else None
+            ),
+        )
+
     def __str__(self) -> str:
         status = "done" if self.completed else "pending"
         due = f", due {self.due_date}" if self.due_date else ""
@@ -89,6 +132,29 @@ class Pet:
         """Return only tasks that have not yet been completed."""
         return [t for t in self.tasks if not t.completed]
 
+    def to_dict(self) -> dict:
+        """Serialize this Pet (and all its tasks) to a JSON-compatible dictionary."""
+        return {
+            "name": self.name,
+            "species": self.species,
+            "breed": self.breed,
+            "age": self.age,
+            "tasks": [t.to_dict() for t in self.tasks],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Pet":
+        """Reconstruct a Pet and its tasks from a dictionary produced by ``to_dict()``."""
+        pet = cls(
+            name=data["name"],
+            species=data["species"],
+            breed=data["breed"],
+            age=data["age"],
+        )
+        for task_data in data.get("tasks", []):
+            pet.add_task(Task.from_dict(task_data))
+        return pet
+
     def __str__(self) -> str:
         return f"{self.name} ({self.species}, {self.breed}, age {self.age})"
 
@@ -116,6 +182,58 @@ class Owner:
         for pet in self.pets:
             all_tasks.extend(pet.get_pending_tasks())
         return all_tasks
+
+    def to_dict(self) -> dict:
+        """Serialize this Owner (and all pets/tasks) to a JSON-compatible dictionary."""
+        return {
+            "name": self.name,
+            "available_minutes": self.available_minutes,
+            "preferences": self.preferences,
+            "pets": [p.to_dict() for p in self.pets],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Owner":
+        """Reconstruct an Owner (and all pets/tasks) from a dictionary."""
+        owner = cls(
+            name=data["name"],
+            available_minutes=data["available_minutes"],
+            preferences=data.get("preferences", []),
+        )
+        for pet_data in data.get("pets", []):
+            owner.add_pet(Pet.from_dict(pet_data))
+        return owner
+
+    def save_to_json(self, filepath: str = "data.json") -> None:
+        """Write the full owner profile (pets and tasks) to a JSON file.
+
+        The file is created or overwritten on every call. ``due_date`` fields
+        are stored as ISO strings so they survive the round-trip. Uses
+        ``json.dump`` with ``indent=2`` for human-readable output.
+
+        Args:
+            filepath: Path to the output file. Defaults to ``"data.json"``
+                      in the current working directory.
+        """
+        with open(filepath, "w", encoding="utf-8") as fh:
+            json.dump(self.to_dict(), fh, indent=2)
+
+    @classmethod
+    def load_from_json(cls, filepath: str = "data.json") -> "Owner":
+        """Load an Owner profile from a JSON file saved by ``save_to_json()``.
+
+        Raises ``FileNotFoundError`` if the file does not exist — callers
+        should check with ``os.path.exists(filepath)`` before calling this
+        if they want a soft fallback.
+
+        Args:
+            filepath: Path to the JSON file. Defaults to ``"data.json"``.
+
+        Returns:
+            A fully reconstructed ``Owner`` with all pets and tasks restored.
+        """
+        with open(filepath, encoding="utf-8") as fh:
+            return cls.from_dict(json.load(fh))
 
     def __str__(self) -> str:
         pet_names = ", ".join(p.name for p in self.pets) if self.pets else "no pets"

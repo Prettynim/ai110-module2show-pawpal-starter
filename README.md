@@ -38,6 +38,16 @@ When two scheduled tasks overlap in time, the app surfaces an orange `st.warning
 ### Auto-assign start times *(Challenge 1)*
 `Scheduler.auto_assign_times(tasks, day_start)` takes tasks that have no `start_time` and slots them into a conflict-free timeline automatically. It sorts by priority, then walks a time cursor forward: tasks with an existing `start_time` are kept as-is (the cursor advances past their end), and untimed tasks are assigned the current cursor position before the cursor advances by their duration. Original task objects are never mutated — new copies are returned. Exposed in the UI as an **"Auto-assign start times"** expander inside the generated schedule.
 
+### Data persistence *(Challenge 2)*
+`Owner.save_to_json(filepath)` and `Owner.load_from_json(filepath)` give the app a memory that survives restarts. The full profile — owner, all pets, all tasks including completion state, start times, and due dates — is serialized to a human-readable `data.json` file using Python's built-in `json` module (no third-party library needed).
+
+The one serialization challenge is `due_date` (`datetime.date` is not JSON-serializable by default). The solution: `to_dict()` converts it to an ISO string (`"2026-03-25"`) and `from_dict()` restores it with `date.fromisoformat()`, preserving the correct Python type on reload.
+
+The Streamlit app auto-saves to `data.json` whenever a profile is created or a task is added. On startup it checks for `data.json` and silently restores the last session — the user lands back exactly where they left off. A corrupted file is caught and ignored so the app always starts cleanly.
+
+#### How Agent Mode was used for Challenge 2
+The serialization design was planned before writing any code: the prompt described the round-trip requirement, the `due_date` type problem, and the fallback-on-corruption behaviour in `app.py`. Agent Mode generated `to_dict`/`from_dict` for all three classes plus `save_to_json`/`load_from_json` in a single pass. The auto-save placement in `app.py` (after setup form and after add-task) was a human decision — Agent Mode initially suggested saving on every Streamlit rerun, which would have caused redundant disk writes on every user interaction. The narrower trigger (only on actual data changes) was substituted before committing.
+
 ### Find next free slot *(Challenge 1)*
 `Scheduler.find_next_slot(tasks, duration_minutes, day_start, day_end)` answers the question "when can I fit one more task?" It converts timed tasks to `(start, end)` minute intervals, merges adjacent or overlapping blocks into contiguous occupied ranges, then scans the gaps for the first one wide enough. Returns the gap's start as `"HH:MM"`, or `None` if the day is full. Exposed as **Step 4: Find a free slot** in the UI.
 
