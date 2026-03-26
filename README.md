@@ -83,3 +83,41 @@ so callers check `if warnings:` rather than using try/except.
 in the household and checks all unique pairs with `itertools.combinations`,
 labelling each warning with both pet names so the owner knows exactly which
 animals have a scheduling clash.
+
+## Testing PawPal+
+
+### Running the tests
+
+```bash
+python -m pytest tests/test_pawpal.py -v
+```
+
+All 38 tests should pass in under a second.
+
+### What the tests cover
+
+| Area | Tests | What is verified |
+|---|---|---|
+| `Task.mark_complete` | 2 | Sets `completed = True`; calling twice doesn't crash |
+| `Task.next_occurrence` | 5 | Daily → +1 day, weekly → +7 days, as-needed → `None`; result is uncompleted; all attributes preserved |
+| `Pet` task management | 3 | Add single/multiple tasks; brand-new pet returns empty lists |
+| `Scheduler` core | 5 | Respects time budget; skips tasks that don't fit; orders by priority; handles empty pet; handles all-tasks-exceed-budget |
+| Recurring completion | 4 | `mark_task_complete(pet=)` adds next occurrence; correct due date; no recurrence without `pet=`; no recurrence for as-needed |
+| `sort_by_time` | 3 | Out-of-order tasks sorted chronologically; untimed tasks placed last; all-untimed list passes through |
+| `filter_tasks` / `filter_by_pet` | 5 | Filter by category; by status; combined; correct pet; unknown pet → `[]` |
+| `get_due_tasks` | 3 | Daily appears every day; weekly only on Monday; as-needed never appears |
+| Conflict detection | 8 | Exact overlap; partial overlap; no overlap; untimed tasks ignored; warning strings contain labels; cross-pet overlap detected; cross-pet no-overlap → `[]` |
+
+### Confidence level
+
+**4 / 5 stars**
+
+The core scheduling behaviors (budget enforcement, priority ordering, recurring
+task creation, and conflict detection) are all directly exercised with both
+happy-path and edge-case inputs. The one star withheld reflects two gaps that
+would need more work before production use:
+
+1. **UI layer** — `app.py` is not tested; Streamlit form interactions are
+   outside the scope of this pytest suite.
+2. **Concurrent multi-owner scenarios** — the system is stateless per run, so
+   shared-state or concurrency bugs are not covered.
