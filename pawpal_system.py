@@ -13,9 +13,6 @@ class Task:
     def mark_complete(self) -> None:
         self.completed = True
 
-    def is_feasible(self, available_minutes: int) -> bool:
-        return self.duration_minutes <= available_minutes
-
 
 @dataclass
 class Pet:
@@ -47,12 +44,12 @@ class Owner:
 
 
 class Scheduler:
-    def __init__(self, owner: Owner, pet: Pet):
+    def __init__(self, owner: Owner):
         self.owner = owner
-        self.pet = pet
         self.scheduled_tasks: List[Task] = []
+        self.skipped_tasks: List[Task] = []
 
-    def generate_plan(self) -> List[Task]:
+    def generate_plan(self, pet: Pet) -> List[Task]:
         pass
 
     def explain_plan(self) -> str:

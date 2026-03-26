@@ -4,13 +4,82 @@
 
 **a. Initial design**
 
-- Briefly describe your initial UML design.
-- What classes did you include, and what responsibilities did you assign to each?
+Three core actions a user should be able to perform:
+
+1. **Enter owner and pet info** — The user provides basic details about themselves and their pet (name, pet type, time available per day, any preferences or constraints). This profile anchors everything the scheduler does — without it, the system has no context for what is reasonable to plan.
+
+2. **Add and edit care tasks** — The user creates tasks representing specific pet care activities (e.g., morning walk, evening feeding, medication, grooming). Each task captures at minimum a duration and a priority level. The user can also edit or remove tasks as the pet's needs change over time.
+
+3. **Generate and view a daily schedule** — The user requests a daily plan. The system selects and orders tasks based on the owner's available time, task priorities, and any other constraints. The resulting schedule is displayed clearly, along with an explanation of why tasks were included or excluded, so the owner understands the reasoning and can trust the plan.
+
+**UML Class Diagram (Mermaid.js)**
+
+```mermaid
+classDiagram
+    class Owner {
+        +String name
+        +int available_minutes
+        +List~String~ preferences
+        +add_pet(pet: Pet)
+        +get_pets() List~Pet~
+    }
+
+    class Pet {
+        +String name
+        +String species
+        +String breed
+        +int age
+        +get_tasks() List~Task~
+        +add_task(task: Task)
+    }
+
+    class Task {
+        +String name
+        +String category
+        +int duration_minutes
+        +int priority
+        +bool completed
+        +mark_complete()
+        +is_feasible(available: int) bool
+    }
+
+    class Scheduler {
+        +Owner owner
+        +Pet pet
+        +List~Task~ scheduled_tasks
+        +generate_plan() List~Task~
+        +explain_plan() String
+        +get_total_duration() int
+    }
+
+    Owner "1" --> "1..*" Pet : owns
+    Pet "1" --> "0..*" Task : has
+    Scheduler --> Owner : uses
+    Scheduler --> Pet : plans for
+    Scheduler --> Task : selects
+```
+
+- **Owner** holds the owner's name, daily time budget, and preferences. It owns one or more pets.
+- **Pet** holds the animal's profile and maintains its list of care tasks.
+- **Task** represents a single care activity with a name, category (walk/feed/meds/etc.), duration, and priority.
+- **Scheduler** takes an owner and pet, selects feasible tasks within the available time budget (highest priority first), and can explain why tasks were included or excluded.
+
+**Class responsibilities summary:**
+
+- **Task** — pure data class; holds one care activity's details. No awareness of scheduling.
+- **Pet** — pure data class; owns a list of tasks and provides access to them.
+- **Owner** — pure data class; holds the time budget and owns a list of pets.
+- **Scheduler** — logic class; takes an `Owner`, accepts a `Pet` at plan-generation time, selects tasks that fit the time budget (highest priority first), tracks skipped tasks, and explains the plan.
 
 **b. Design changes**
 
-- Did your design change during implementation?
-- If yes, describe at least one change and why you made it.
+Three changes were made after reviewing the initial skeleton:
+
+1. **Removed `is_feasible()` from `Task`.** The original skeleton put this method on `Task`, but a task shouldn't need to know about available time — that is the scheduler's concern. Putting it on `Task` leaked scheduling logic into a data class. The check now lives inside `Scheduler.generate_plan()`.
+
+2. **`Scheduler` now accepts a `Pet` in `generate_plan(pet)` rather than in `__init__`.** The original design hard-coded a single pet at construction time, which contradicted `Owner` supporting multiple pets. Passing the pet to `generate_plan()` lets one `Scheduler` instance produce plans for any of the owner's pets.
+
+3. **Added `skipped_tasks` list to `Scheduler`.** `explain_plan()` needs to describe why tasks were left out, not just which tasks were included. Without storing the skipped tasks, that explanation would be impossible to produce.
 
 ---
 
