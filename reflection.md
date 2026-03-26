@@ -92,8 +92,18 @@ Three changes were made after reviewing the initial skeleton:
 
 **b. Tradeoffs**
 
-- Describe one tradeoff your scheduler makes.
-- Why is that tradeoff reasonable for this scenario?
+**Greedy priority selection does not backtrack.**
+
+`generate_plan()` sorts tasks by priority and adds them one by one until the time budget runs out. If a high-priority task is too long to fit in the remaining time, it is skipped — even if removing a lower-priority task that was already added would free up exactly enough room.
+
+For example: if 15 minutes remain and a P2 task needs 20 minutes, the scheduler skips it. It does not go back and ask "could I drop the P3 task I already added (10 min) to make room?" That backtracking would solve an instance of the 0/1 knapsack problem, which has exponential worst-case complexity.
+
+This tradeoff is reasonable for a pet care app because:
+1. **Priority order is usually correct.** A dog's medication (P1) genuinely matters more than a bath (P4). Owners write priorities intentionally, so the greedy result aligns with their intent the vast majority of the time.
+2. **Schedules are short.** A typical pet has 5–10 tasks per day. Even an optimal solver would rarely produce a different result than greedy at that scale.
+3. **Transparency matters more than optimality.** A pet owner needs to understand and trust their schedule. The greedy approach produces an explanation ("highest priority first, stopped when time ran out") that is easy to reason about. An optimal packing might schedule a surprising combination that the owner cannot easily verify.
+
+The cost is that occasionally a better packing exists but is not found. That is an acceptable tradeoff for clarity and speed in this domain.
 
 ---
 
