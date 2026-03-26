@@ -16,12 +16,17 @@ Three core actions a user should be able to perform:
 
 ```mermaid
 classDiagram
-    class Owner {
+    class Task {
         +String name
-        +int available_minutes
-        +List~String~ preferences
-        +add_pet(pet: Pet)
-        +get_pets() List~Pet~
+        +String category
+        +int duration_minutes
+        +int priority
+        +String frequency
+        +bool completed
+        +String start_time
+        +date due_date
+        +mark_complete() None
+        +next_occurrence() Task
     }
 
     class Pet {
@@ -29,34 +34,46 @@ classDiagram
         +String species
         +String breed
         +int age
+        +List~Task~ tasks
+        +add_task(task: Task) None
+        +remove_task(task_name: str) bool
         +get_tasks() List~Task~
-        +add_task(task: Task)
+        +get_pending_tasks() List~Task~
     }
 
-    class Task {
+    class Owner {
         +String name
-        +String category
-        +int duration_minutes
-        +int priority
-        +bool completed
-        +mark_complete()
-        +is_feasible(available: int) bool
+        +int available_minutes
+        +List~String~ preferences
+        +List~Pet~ pets
+        +add_pet(pet: Pet) None
+        +get_pets() List~Pet~
+        +get_all_tasks() List~Task~
     }
 
     class Scheduler {
         +Owner owner
-        +Pet pet
         +List~Task~ scheduled_tasks
-        +generate_plan() List~Task~
+        +List~Task~ skipped_tasks
+        +generate_plan(pet: Pet) List~Task~
         +explain_plan() String
         +get_total_duration() int
+        +mark_task_complete(name: str, pet: Pet) bool
+        +sort_by_time(tasks)$ List~Task~
+        +filter_tasks(tasks, category, completed)$ List~Task~
+        +filter_by_pet(owner, pet_name)$ List~Task~
+        +get_due_tasks(pet, day_of_week)$ List~Task~
+        +detect_conflicts(tasks)$ List~Tuple~
+        +warn_conflicts(tasks, label)$ List~str~
+        +warn_cross_pet_conflicts(owner)$ List~str~
     }
 
     Owner "1" --> "1..*" Pet : owns
     Pet "1" --> "0..*" Task : has
-    Scheduler --> Owner : uses
-    Scheduler --> Pet : plans for
-    Scheduler --> Task : selects
+    Task ..> Task : next_occurrence()
+    Scheduler --> Owner : uses budget of
+    Scheduler ..> Pet : generate_plan(pet)
+    Scheduler ..> Task : selects and warns
 ```
 
 - **Owner** holds the owner's name, daily time budget, and preferences. It owns one or more pets.

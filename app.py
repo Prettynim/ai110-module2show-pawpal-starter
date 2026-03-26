@@ -1,4 +1,7 @@
+from datetime import date
+
 import streamlit as st
+
 from pawpal_system import Task, Pet, Owner, Scheduler
 
 st.set_page_config(page_title="PawPal+", page_icon="🐾", layout="centered")
@@ -37,18 +40,16 @@ with st.form("setup_form"):
     submitted = st.form_submit_button("Save owner & pet")
 
 if submitted:
-    # Create real Owner and Pet objects and wire them together
     pet = Pet(name=pet_name, species=species, breed=breed, age=age)
     owner = Owner(name=owner_name, available_minutes=int(available_minutes))
-    owner.add_pet(pet)                          # Owner.add_pet() links them
-    scheduler = Scheduler(owner)                # Scheduler takes the owner
+    owner.add_pet(pet)
+    scheduler = Scheduler(owner)
 
     st.session_state.owner = owner
     st.session_state.pet = pet
     st.session_state.scheduler = scheduler
     st.success(f"Saved! {owner.name}'s pet {pet.name} is ready.")
 
-# Show current owner/pet summary if they exist
 if st.session_state.owner:
     st.caption(f"Current profile: {st.session_state.owner}")
 
@@ -73,6 +74,12 @@ with st.form("task_form"):
         frequency = st.selectbox("Frequency", FREQUENCY_OPTIONS)
     with col3:
         priority_label = st.selectbox("Priority", list(PRIORITY_MAP.keys()))
+        start_time_input = st.text_input(
+            "Start time (HH:MM, optional)",
+            value="",
+            placeholder="e.g. 08:00",
+            help="Leave blank if you don't need time-based sorting or conflict detection.",
+        )
 
     add_task = st.form_submit_button("Add task")
 
@@ -80,31 +87,88 @@ if add_task:
     if st.session_state.pet is None:
         st.warning("Save your owner and pet profile first (Step 1).")
     else:
+        # Validate the optional HH:MM field before creating the task
+        parsed_time = None
+        if start_time_input.strip():
+            parts = start_time_input.strip().split(":")
+            if (
+                len(parts) == 2
+                and parts[0].isdigit()
+                and parts[1].isdigit()
+                and 0 <= int(parts[0]) <= 23
+                and 0 <= int(parts[1]) <= 59
+            ):
+                parsed_time = f"{int(parts[0]):02d}:{int(parts[1]):02d}"
+            else:
+                st.error("Start time must be in HH:MM format (e.g. 08:30). Task not added.")
+                st.stop()
+
         task = Task(
             name=task_name,
             category=category,
             duration_minutes=int(duration),
             priority=PRIORITY_MAP[priority_label],
             frequency=frequency,
+            start_time=parsed_time,
+            due_date=date.today(),
         )
-        st.session_state.pet.add_task(task)     # Pet.add_task() stores it
-        st.success(f"Added task: {task.name}")
+        st.session_state.pet.add_task(task)
+        st.success(f"Added: **{task.name}** ({task.duration_minutes} min, {frequency})")
 
-# Display current task list
+# --- Task list with sort and filter controls ---
 if st.session_state.pet and st.session_state.pet.get_tasks():
-    st.write(f"**{st.session_state.pet.name}'s tasks:**")
-    rows = [
-        {
-            "Task": t.name,
-            "Category": t.category,
-            "Minutes": t.duration_minutes,
-            "Priority": f"P{t.priority}",
-            "Frequency": t.frequency,
-            "Done": t.completed,
-        }
-        for t in st.session_state.pet.get_tasks()
-    ]
-    st.table(rows)
+    tasks_all = st.session_state.pet.get_tasks()
+
+    fc1, fc2, fc3 = st.columns([2, 2, 2])
+    with fc1:
+        filter_cat = st.selectbox(
+            "Filter by category",
+            ["All"] + CATEGORY_OPTIONS,
+            key="filter_cat",
+        )
+    with fc2:
+        filter_status = st.selectbox(
+            "Filter by status",
+            ["All", "Pending", "Completed"],
+            key="filter_status",
+        )
+    with fc3:
+        sort_order = st.selectbox(
+            "Sort by",
+            ["Time (earliest first)", "Priority (highest first)"],
+            key="sort_order",
+        )
+
+    # Apply filters
+    filtered = Scheduler.filter_tasks(
+        tasks_all,
+        category=None if filter_cat == "All" else filter_cat,
+        completed=None if filter_status == "All" else (filter_status == "Completed"),
+    )
+
+    # Apply sort
+    if sort_order == "Time (earliest first)":
+        display_tasks = Scheduler.sort_by_time(filtered)
+    else:
+        display_tasks = sorted(filtered, key=lambda t: t.priority)
+
+    st.write(f"**{st.session_state.pet.name}'s tasks** ({len(display_tasks)} shown):")
+    if display_tasks:
+        rows = [
+            {
+                "Task": t.name,
+                "Category": t.category,
+                "Start": t.start_time or "--",
+                "Minutes": t.duration_minutes,
+                "Priority": f"P{t.priority}",
+                "Frequency": t.frequency,
+                "Done": "Yes" if t.completed else "No",
+            }
+            for t in display_tasks
+        ]
+        st.table(rows)
+    else:
+        st.info("No tasks match the current filters.")
 else:
     st.info("No tasks yet. Add one above.")
 
@@ -125,32 +189,54 @@ if st.button("Generate schedule"):
     elif not pet.get_pending_tasks():
         st.warning("Add at least one task in Step 2 before generating a schedule.")
     else:
-        plan = scheduler.generate_plan(pet)     # Scheduler.generate_plan() does the work
+        plan = scheduler.generate_plan(pet)
 
-        st.success(
-            f"Scheduled {len(plan)} task(s) using "
-            f"{scheduler.get_total_duration()} of {owner.available_minutes} available minutes."
+        # --- Conflict warnings — shown BEFORE the plan so the owner sees them first ---
+        conflict_warnings = Scheduler.warn_conflicts(
+            [t for t in plan if t.start_time is not None],
+            label=pet.name,
         )
+        if conflict_warnings:
+            st.warning(
+                f"**{len(conflict_warnings)} scheduling conflict(s) detected.** "
+                "Two or more tasks overlap in time. Consider adjusting their start times."
+            )
+            for w in conflict_warnings:
+                # Strip the leading "WARNING: " prefix — Streamlit's orange banner already signals it
+                st.warning(w.replace("WARNING: ", ""))
 
+        # --- Schedule summary ---
         if plan:
-            st.write("**Scheduled tasks:**")
+            st.success(
+                f"Scheduled **{len(plan)} task(s)** — "
+                f"{scheduler.get_total_duration()} of {owner.available_minutes} minutes used."
+            )
+
+            # Sort the scheduled tasks by time for display
+            sorted_plan = Scheduler.sort_by_time(plan)
             schedule_rows = [
                 {
                     "Task": t.name,
                     "Category": t.category,
+                    "Start": t.start_time or "--",
                     "Minutes": t.duration_minutes,
                     "Priority": f"P{t.priority}",
+                    "Frequency": t.frequency,
                 }
-                for t in plan
+                for t in sorted_plan
             ]
             st.table(schedule_rows)
+        else:
+            st.error("No tasks could be scheduled within the available time.")
 
+        # --- Skipped tasks ---
         if scheduler.skipped_tasks:
             st.warning(
-                f"{len(scheduler.skipped_tasks)} task(s) skipped — not enough time remaining:"
+                f"**{len(scheduler.skipped_tasks)} task(s) skipped** — not enough time remaining:"
             )
             for t in scheduler.skipped_tasks:
-                st.write(f"- {t.name} ({t.duration_minutes} min)")
+                st.write(f"- {t.name} ({t.duration_minutes} min, P{t.priority})")
 
+        # --- Reasoning expander ---
         with st.expander("Why this plan?"):
-            st.text(scheduler.explain_plan())   # Scheduler.explain_plan() gives the reasoning
+            st.text(scheduler.explain_plan())
