@@ -210,3 +210,98 @@ The most important thing learned: **AI accelerates implementation but cannot set
 At every phase, the quality of the AI's output was directly proportional to the clarity of the design decision made before the prompt was written. When the architecture was ambiguous — "should `is_feasible` go on `Task` or `Scheduler`?" — the AI produced plausible-looking code that embedded the wrong assumption. When the architecture was settled first and the prompt described a specific, bounded problem, the AI produced code that was 80–90% correct on the first attempt.
 
 This means the human's most valuable contribution is not writing code — it is making the design decisions that the AI cannot make alone: which class owns which responsibility, what the right tradeoff is between simplicity and correctness, and when a "more clever" algorithmic suggestion should be rejected in favor of something a future reader can understand. The AI is a fast and capable builder. The lead architect still has to decide what to build.
+
+---
+
+## 6. Prompt Comparison
+
+### Task chosen
+
+The recurring-task due-date filter: given a pet's pending task list and a day of the week, return only the tasks that should auto-populate today's schedule. The rules are: daily tasks always appear; weekly tasks appear on Mondays only; as-needed tasks never appear automatically.
+
+### Prompt used (identical for both models)
+
+> Write a static method `get_due_tasks(pet, day_of_week)` for a `Scheduler` class in Python.
+> `pet` is a `Pet` object with a `get_pending_tasks()` method that returns a list of `Task` objects.
+> Each `Task` has a `frequency` field: `"daily"`, `"weekly"`, or `"as-needed"`.
+> `day_of_week` is an integer where 0 = Monday, 6 = Sunday.
+> Rules: daily tasks are always included. Weekly tasks are included only on Monday. As-needed tasks are never included automatically.
+> Return a list of matching Task objects.
+
+---
+
+### GPT-4o response
+
+```python
+@staticmethod
+def get_due_tasks(pet, day_of_week):
+    due_tasks = []
+    for task in pet.get_pending_tasks():
+        if task.frequency == "daily":
+            due_tasks.append(task)
+        elif task.frequency == "weekly":
+            if day_of_week == 0:
+                due_tasks.append(task)
+        # "as-needed" tasks are intentionally skipped
+    return due_tasks
+```
+
+**Characteristics of this response:**
+- Explicit `if/elif` chain with a nested `if` for the Monday check.
+- Accumulator pattern (`due_tasks = []`, `.append()`), which is idiomatic but more verbose than a comprehension.
+- No type hints.
+- The comment explains the `as-needed` omission, but only because a fallthrough is easy to miss in this pattern — the comment is compensating for a structural weakness.
+
+---
+
+### Claude (claude-sonnet-4-6) response
+
+```python
+@staticmethod
+def get_due_tasks(pet: Pet, day_of_week: int) -> List[Task]:
+    """Return pending tasks due on the given day of week (0=Mon … 6=Sun).
+
+    Recurrence rules:
+      - "daily"     → always due
+      - "weekly"    → due on Mondays only (day_of_week == 0)
+      - "as-needed" → never auto-scheduled; must be added manually
+    """
+    eligible = {"daily"} | ({"weekly"} if day_of_week == 0 else set())
+    return [t for t in pet.get_pending_tasks() if t.frequency in eligible]
+```
+
+**Characteristics of this response:**
+- Builds an `eligible` set and uses `in` membership — one expression captures all rules, and adding a new frequency type in the future is a one-word change.
+- List comprehension instead of an accumulator loop.
+- Full type hints on parameters and return value.
+- Docstring documents all three frequency behaviors explicitly, so the rules are readable without tracing the logic.
+
+---
+
+### Comparison
+
+| Dimension | GPT-4o | Claude |
+|---|---|---|
+| Control flow | Nested `if/elif` | Set membership (`in`) |
+| Loop style | Accumulator + `.append()` | List comprehension |
+| Type hints | None | Full (`pet: Pet`, `-> List[Task]`) |
+| Docstring | None | Full, enumerates all three rules |
+| Extensibility | New frequency → new `elif` branch | New frequency → add one word to set literal |
+| Lines of logic | 6 | 2 |
+
+**Which was more Pythonic, and why**
+
+Claude's response is more Pythonic on two counts.
+
+First, **set membership over branching**. The `eligible` set pattern (`{"daily"} | ({"weekly"} if ... else set())`) expresses the selection rule as data rather than control flow. Python's style guide and the Zen of Python both favor flat, data-driven dispatch over deeply nested conditionals when the branches are simple inclusions. The GPT-4o version requires reading two nesting levels to understand the same rule.
+
+Second, **list comprehension over accumulator**. PEP 8 and the Python documentation explicitly recommend comprehensions for simple filter-and-collect operations. The GPT-4o accumulator is not wrong, but it is the pattern a developer coming from Java or C# would write; a Python developer reaches for the comprehension first.
+
+**Where GPT-4o had an edge**
+
+The GPT-4o version is marginally more readable to a complete beginner. The `if task.frequency == "daily"` line reads like a plain English sentence, and someone who does not know Python well can trace it step by step without knowing what a set union expression means. For a teaching context this is a real advantage; for production code intended to be maintained and extended, the set-membership pattern wins.
+
+**Decision made**
+
+The Claude version was adopted (it is the code currently in `pawpal_system.py`), with one addition: a docstring was written before running the prompt so the model had the behavioral contract to work from. The docstring was submitted as part of the prompt and came back in the output unchanged — confirming that providing the documentation up front is a reliable way to get correctly documented code without a second prompt.
+

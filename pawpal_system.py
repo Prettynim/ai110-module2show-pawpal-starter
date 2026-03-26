@@ -262,7 +262,10 @@ class Scheduler:
         self.scheduled_tasks = []
         self.skipped_tasks = []
 
-        candidates = sorted(pet.get_pending_tasks(), key=lambda t: t.priority)
+        candidates = sorted(
+            pet.get_pending_tasks(),
+            key=lambda t: (t.priority, t.start_time or "99:99"),
+        )
         remaining = self.owner.available_minutes
 
         for task in candidates:

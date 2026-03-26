@@ -716,3 +716,44 @@ def test_multiple_pets_survive_round_trip(tmp_json):
     names = [p.name for p in loaded.get_pets()]
     assert "Buddy" in names
     assert "Luna" in names
+
+
+# ---------------------------------------------------------------------------
+# Scheduler — generate_plan dual-key sort (Challenge 3)
+# ---------------------------------------------------------------------------
+
+def test_generate_plan_same_priority_sorted_by_time():
+    """Tasks with equal priority should be ordered by start_time (earliest first)."""
+    owner = Owner(name="Alex", available_minutes=120)
+    pet = Pet(name="Rex", species="Dog", breed="Poodle", age=2)
+    pet.add_task(Task("Feed PM",  "feed", duration_minutes=10, priority=2, start_time="18:00"))
+    pet.add_task(Task("Feed AM",  "feed", duration_minutes=10, priority=2, start_time="07:00"))
+    pet.add_task(Task("Feed Noon","feed", duration_minutes=10, priority=2, start_time="12:00"))
+    scheduler = Scheduler(owner)
+    plan = scheduler.generate_plan(pet)
+    names = [t.name for t in plan]
+    assert names == ["Feed AM", "Feed Noon", "Feed PM"]
+
+
+def test_generate_plan_priority_beats_time():
+    """A higher-priority task should be scheduled before a timed lower-priority task."""
+    owner = Owner(name="Alex", available_minutes=120)
+    pet = Pet(name="Rex", species="Dog", breed="Poodle", age=2)
+    # P3 task is at 07:00, P1 task has no time — P1 should still come first in plan
+    pet.add_task(Task("Grooming", "grooming", duration_minutes=20, priority=3, start_time="07:00"))
+    pet.add_task(Task("Meds",     "meds",     duration_minutes=10, priority=1))
+    scheduler = Scheduler(owner)
+    plan = scheduler.generate_plan(pet)
+    assert plan[0].name == "Meds"
+
+
+def test_generate_plan_untimed_tasks_after_timed_at_same_priority():
+    """Untimed tasks sort to the end among tasks of the same priority level."""
+    owner = Owner(name="Alex", available_minutes=120)
+    pet = Pet(name="Rex", species="Dog", breed="Poodle", age=2)
+    pet.add_task(Task("Untimed Feed", "feed", duration_minutes=10, priority=2))
+    pet.add_task(Task("Timed Feed",   "feed", duration_minutes=10, priority=2, start_time="08:00"))
+    scheduler = Scheduler(owner)
+    plan = scheduler.generate_plan(pet)
+    assert plan[0].name == "Timed Feed"
+    assert plan[1].name == "Untimed Feed"

@@ -7,6 +7,47 @@ from pawpal_system import Task, Pet, Owner, Scheduler
 
 st.set_page_config(page_title="PawPal+", page_icon="🐾", layout="centered")
 
+
+# -------------------------------------------------------------------------
+# Formatting helpers
+# -------------------------------------------------------------------------
+
+def priority_badge(priority: int) -> str:
+    """Emoji badge for priority level (1=High, 2=Medium, 3=Low)."""
+    if priority == 1:
+        return "🔴 High"
+    elif priority == 2:
+        return "🟡 Medium"
+    return "🟢 Low"
+
+
+def category_icon(category: str) -> str:
+    """Emoji icon for a task category."""
+    icons = {
+        "walk":       "🦮",
+        "feed":       "🍽️",
+        "meds":       "💊",
+        "grooming":   "✂️",
+        "enrichment": "🎾",
+    }
+    return icons.get(category.lower(), "📋")
+
+
+def status_badge(completed: bool) -> str:
+    """Colored status label for a task's completion state."""
+    return "✅ Done" if completed else "⏳ Pending"
+
+
+def freq_badge(frequency: str) -> str:
+    """Emoji badge for task frequency."""
+    badges = {
+        "daily":     "📅 Daily",
+        "weekly":    "📆 Weekly",
+        "as-needed": "🔔 As needed",
+    }
+    return badges.get(frequency, frequency)
+
+
 DATA_FILE = "data.json"
 
 
@@ -85,7 +126,7 @@ st.divider()
 # -------------------------------------------------------------------------
 st.subheader("Step 2: Add care tasks")
 
-PRIORITY_MAP = {"High (1)": 1, "Medium (2)": 2, "Low (3)": 3}
+PRIORITY_MAP = {"🔴 High (1)": 1, "🟡 Medium (2)": 2, "🟢 Low (3)": 3}
 CATEGORY_OPTIONS = ["walk", "feed", "meds", "grooming", "enrichment", "other"]
 FREQUENCY_OPTIONS = ["daily", "weekly", "as-needed"]
 
@@ -139,7 +180,10 @@ if add_task:
         )
         st.session_state.pet.add_task(task)
         _save()
-        st.success(f"Added: **{task.name}** ({task.duration_minutes} min, {frequency})")
+        st.success(
+            f"{category_icon(task.category)} Added: **{task.name}** "
+            f"({task.duration_minutes} min · {freq_badge(task.frequency)} · {priority_badge(task.priority)})"
+        )
 
 # --- Task list with sort and filter controls ---
 if st.session_state.pet and st.session_state.pet.get_tasks():
@@ -182,17 +226,17 @@ if st.session_state.pet and st.session_state.pet.get_tasks():
     if display_tasks:
         rows = [
             {
-                "Task": t.name,
-                "Category": t.category,
+                "Task": f"{category_icon(t.category)} {t.name}",
+                "Category": t.category.title(),
                 "Start": t.start_time or "--",
-                "Minutes": t.duration_minutes,
-                "Priority": f"P{t.priority}",
-                "Frequency": t.frequency,
-                "Done": "Yes" if t.completed else "No",
+                "Min": t.duration_minutes,
+                "Priority": priority_badge(t.priority),
+                "Frequency": freq_badge(t.frequency),
+                "Status": status_badge(t.completed),
             }
             for t in display_tasks
         ]
-        st.table(rows)
+        st.dataframe(rows, use_container_width=True, hide_index=True)
     else:
         st.info("No tasks match the current filters.")
 else:
@@ -231,27 +275,32 @@ if st.button("Generate schedule"):
                 # Strip the leading "WARNING: " prefix — Streamlit's orange banner already signals it
                 st.warning(w.replace("WARNING: ", ""))
 
-        # --- Schedule summary ---
+        # --- Schedule summary metrics ---
         if plan:
-            st.success(
-                f"Scheduled **{len(plan)} task(s)** — "
-                f"{scheduler.get_total_duration()} of {owner.available_minutes} minutes used."
-            )
+            used = scheduler.get_total_duration()
+            remaining = owner.available_minutes - used
+            skipped_count = len(scheduler.skipped_tasks)
+
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("✅ Scheduled", f"{len(plan)} task(s)")
+            m2.metric("⏱️ Minutes used", f"{used} / {owner.available_minutes}")
+            m3.metric("🕐 Remaining", f"{remaining} min")
+            m4.metric("⏭️ Skipped", f"{skipped_count} task(s)")
 
             # Sort the scheduled tasks by time for display
             sorted_plan = Scheduler.sort_by_time(plan)
             schedule_rows = [
                 {
-                    "Task": t.name,
-                    "Category": t.category,
+                    "Task": f"{category_icon(t.category)} {t.name}",
+                    "Category": t.category.title(),
                     "Start": t.start_time or "--",
-                    "Minutes": t.duration_minutes,
-                    "Priority": f"P{t.priority}",
-                    "Frequency": t.frequency,
+                    "Min": t.duration_minutes,
+                    "Priority": priority_badge(t.priority),
+                    "Frequency": freq_badge(t.frequency),
                 }
                 for t in sorted_plan
             ]
-            st.table(schedule_rows)
+            st.dataframe(schedule_rows, use_container_width=True, hide_index=True)
         else:
             st.error("No tasks could be scheduled within the available time.")
 
@@ -261,7 +310,10 @@ if st.button("Generate schedule"):
                 f"**{len(scheduler.skipped_tasks)} task(s) skipped** — not enough time remaining:"
             )
             for t in scheduler.skipped_tasks:
-                st.write(f"- {t.name} ({t.duration_minutes} min, P{t.priority})")
+                st.write(
+                    f"- {category_icon(t.category)} **{t.name}** "
+                    f"({t.duration_minutes} min · {priority_badge(t.priority)})"
+                )
 
         # --- Reasoning expander ---
         with st.expander("Why this plan?"):
@@ -270,7 +322,7 @@ if st.button("Generate schedule"):
         # --- Auto-assign times expander ---
         untimed_in_plan = [t for t in plan if t.start_time is None]
         if untimed_in_plan:
-            with st.expander(f"Auto-assign start times ({len(untimed_in_plan)} untimed task(s))"):
+            with st.expander(f"⏰ Auto-assign start times ({len(untimed_in_plan)} untimed task(s))"):
                 st.write(
                     "These tasks have no start time. PawPal+ can slot them "
                     "sequentially in priority order starting from a chosen time."
@@ -281,15 +333,19 @@ if st.button("Generate schedule"):
                 if st.button("Assign times", key="btn_auto"):
                     assigned = Scheduler.auto_assign_times(plan, day_start=auto_start)
                     st.success("Suggested timeline (no overlaps guaranteed):")
-                    st.table([
-                        {
-                            "Task": t.name,
-                            "Suggested start": t.start_time,
-                            "Duration": f"{t.duration_minutes} min",
-                            "Priority": f"P{t.priority}",
-                        }
-                        for t in assigned
-                    ])
+                    st.dataframe(
+                        [
+                            {
+                                "Task": f"{category_icon(t.category)} {t.name}",
+                                "Suggested start": t.start_time,
+                                "Duration": f"{t.duration_minutes} min",
+                                "Priority": priority_badge(t.priority),
+                            }
+                            for t in assigned
+                        ],
+                        use_container_width=True,
+                        hide_index=True,
+                    )
 
 st.divider()
 
@@ -319,9 +375,9 @@ if st.session_state.pet and st.session_state.pet.get_tasks():
         )
         if slot:
             end_min = Scheduler._to_minutes(slot) + int(slot_duration)
+            end_str = f"{end_min // 60:02d}:{end_min % 60:02d}"
             st.success(
-                f"Next available **{slot_duration}-minute** slot: "
-                f"**{slot}** to **{end_min // 60:02d}:{end_min % 60:02d}**."
+                f"⏰ Next available **{slot_duration}-minute** slot: **{slot} → {end_str}**"
             )
         else:
             st.warning(
