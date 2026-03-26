@@ -483,3 +483,138 @@ def test_warn_cross_pet_conflicts_no_overlap_returns_empty():
     owner.add_pet(luna)
 
     assert Scheduler.warn_cross_pet_conflicts(owner) == []
+
+
+# ---------------------------------------------------------------------------
+# Scheduler — auto_assign_times (Challenge 1)
+# ---------------------------------------------------------------------------
+
+def test_auto_assign_times_untimed_tasks_get_start_times():
+    """Every task returned by auto_assign_times should have a start_time."""
+    tasks = [
+        Task("Walk",  "walk",      duration_minutes=30, priority=1),
+        Task("Feed",  "feed",      duration_minutes=10, priority=2),
+        Task("Meds",  "meds",      duration_minutes=5,  priority=3),
+    ]
+    result = Scheduler.auto_assign_times(tasks, day_start="08:00")
+    assert all(t.start_time is not None for t in result)
+
+
+def test_auto_assign_times_sequential_no_overlap():
+    """Assigned start times should be sequential with no gaps or overlaps."""
+    tasks = [
+        Task("Walk",  "walk", duration_minutes=30, priority=1),
+        Task("Feed",  "feed", duration_minutes=10, priority=2),
+    ]
+    result = Scheduler.auto_assign_times(tasks, day_start="08:00")
+    # Walk: 08:00–08:30, Feed should start at 08:30
+    times = [t.start_time for t in result]
+    assert times[0] == "08:00"
+    assert times[1] == "08:30"
+
+
+def test_auto_assign_times_respects_existing_start_time():
+    """A task that already has a start_time should keep it unchanged."""
+    tasks = [
+        Task("Walk",  "walk", duration_minutes=30, priority=1, start_time="09:00"),
+        Task("Feed",  "feed", duration_minutes=10, priority=2),
+    ]
+    result = Scheduler.auto_assign_times(tasks, day_start="08:00")
+    walk = next(t for t in result if t.name == "Walk")
+    assert walk.start_time == "09:00"
+
+
+def test_auto_assign_times_cursor_advances_past_fixed_task():
+    """An untimed task after a fixed task should not overlap with it."""
+    tasks = [
+        Task("Walk",  "walk", duration_minutes=30, priority=1, start_time="08:00"),
+        Task("Feed",  "feed", duration_minutes=10, priority=2),  # no start_time
+    ]
+    result = Scheduler.auto_assign_times(tasks, day_start="07:00")
+    feed = next(t for t in result if t.name == "Feed")
+    # Walk ends at 08:30, so Feed must start at 08:30 or later
+    feed_start = Scheduler._to_minutes(feed.start_time)
+    assert feed_start >= Scheduler._to_minutes("08:30")
+
+
+def test_auto_assign_times_priority_order():
+    """Tasks should be returned in priority order (highest first)."""
+    tasks = [
+        Task("Bath",  "grooming", duration_minutes=40, priority=3),
+        Task("Meds",  "meds",     duration_minutes=5,  priority=1),
+        Task("Feed",  "feed",     duration_minutes=10, priority=2),
+    ]
+    result = Scheduler.auto_assign_times(tasks, day_start="08:00")
+    priorities = [t.priority for t in result]
+    assert priorities == sorted(priorities)
+
+
+def test_auto_assign_times_does_not_mutate_originals():
+    """Original tasks without a start_time should remain unchanged."""
+    task = Task("Feed", "feed", duration_minutes=10, priority=1)
+    Scheduler.auto_assign_times([task], day_start="08:00")
+    assert task.start_time is None
+
+
+# ---------------------------------------------------------------------------
+# Scheduler — find_next_slot (Challenge 1)
+# ---------------------------------------------------------------------------
+
+def test_find_next_slot_empty_schedule_returns_day_start():
+    """With no existing tasks, the first slot should be the day start."""
+    slot = Scheduler.find_next_slot([], duration_minutes=30, day_start="08:00")
+    assert slot == "08:00"
+
+
+def test_find_next_slot_gap_between_tasks():
+    """A gap between two tasks that is large enough should be found."""
+    tasks = [
+        Task("Walk", "walk", duration_minutes=30, priority=1, start_time="08:00"),
+        Task("Bath", "grooming", duration_minutes=40, priority=3, start_time="10:00"),
+    ]
+    # Gap: 08:30 to 10:00 = 90 min. A 60-min task should fit at 08:30.
+    slot = Scheduler.find_next_slot(tasks, duration_minutes=60, day_start="08:00")
+    assert slot == "08:30"
+
+
+def test_find_next_slot_gap_too_small_skips_to_next():
+    """A gap smaller than the requested duration should be skipped."""
+    tasks = [
+        Task("Walk", "walk", duration_minutes=30, priority=1, start_time="08:00"),
+        Task("Bath", "grooming", duration_minutes=40, priority=3, start_time="08:40"),
+    ]
+    # Gap between Walk (ends 08:30) and Bath (starts 08:40) is only 10 min.
+    # A 30-min task should land after Bath ends at 09:20.
+    slot = Scheduler.find_next_slot(tasks, duration_minutes=30, day_start="08:00")
+    assert slot == "09:20"
+
+
+def test_find_next_slot_no_room_returns_none():
+    """If the day is too full, find_next_slot should return None."""
+    tasks = [
+        Task("Block", "walk", duration_minutes=840, priority=1, start_time="08:00"),
+    ]
+    # Block runs 08:00–22:00, filling the entire day window.
+    slot = Scheduler.find_next_slot(
+        tasks, duration_minutes=30, day_start="08:00", day_end="22:00"
+    )
+    assert slot is None
+
+
+def test_find_next_slot_untimed_tasks_ignored():
+    """Tasks without a start_time should not affect slot finding."""
+    tasks = [
+        Task("Untimed", "feed", duration_minutes=120, priority=1),  # no start_time
+    ]
+    slot = Scheduler.find_next_slot(tasks, duration_minutes=30, day_start="08:00")
+    assert slot == "08:00"
+
+
+def test_find_next_slot_slot_after_all_tasks():
+    """When no gaps fit, the slot should be offered after the last task."""
+    tasks = [
+        Task("Walk", "walk", duration_minutes=30, priority=1, start_time="08:00"),
+    ]
+    # Walk ends 08:30. A 20-min task should start at 08:30.
+    slot = Scheduler.find_next_slot(tasks, duration_minutes=20, day_start="08:00")
+    assert slot == "08:30"

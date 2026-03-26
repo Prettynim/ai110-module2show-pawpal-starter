@@ -357,3 +357,127 @@ class Scheduler:
                     f"overlaps [{pet_b}] '{b.name}' ({b.start_time}-{b_end})"
                 )
         return all_warnings
+
+    # ------------------------------------------------------------------
+    # Challenge 1: Advanced algorithmic capabilities
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def auto_assign_times(tasks: List[Task], day_start: str = "08:00") -> List[Task]:
+        """Assign start times to untimed tasks, producing a conflict-free timeline.
+
+        Algorithm
+        ---------
+        1. Sort all tasks by priority (highest first).
+        2. Walk through them with a time *cursor* that starts at ``day_start``.
+        3. If a task already has a ``start_time``, keep it and advance the cursor
+           past its end (so the next untimed task doesn't overlap it).
+        4. If a task has no ``start_time``, assign the current cursor position,
+           then advance the cursor by the task's duration.
+
+        A new Task object is returned for each untimed task so the originals
+        are never mutated. Tasks that already had a start_time are returned
+        as-is.
+
+        Args:
+            tasks:     List of Task objects to schedule.
+            day_start: Earliest allowed start time in ``"HH:MM"`` format.
+
+        Returns:
+            A list of Task objects in priority order, all with a start_time set.
+        """
+        cursor = Scheduler._to_minutes(day_start)
+        result: List[Task] = []
+
+        for task in sorted(tasks, key=lambda t: t.priority):
+            if task.start_time is not None:
+                # Fixed task — keep its time, advance cursor past its end
+                task_end = Scheduler._to_minutes(task.start_time) + task.duration_minutes
+                cursor = max(cursor, task_end)
+                result.append(task)
+            else:
+                # Untimed task — slot it at the current cursor
+                assigned = f"{cursor // 60:02d}:{cursor % 60:02d}"
+                cursor += task.duration_minutes
+                result.append(Task(
+                    name=task.name,
+                    category=task.category,
+                    duration_minutes=task.duration_minutes,
+                    priority=task.priority,
+                    frequency=task.frequency,
+                    completed=task.completed,
+                    start_time=assigned,
+                    due_date=task.due_date,
+                ))
+
+        return result
+
+    @staticmethod
+    def find_next_slot(
+        tasks: List[Task],
+        duration_minutes: int,
+        day_start: str = "08:00",
+        day_end: str = "22:00",
+    ) -> Optional[str]:
+        """Find the earliest free gap in the day that fits a task of the given duration.
+
+        Algorithm
+        ---------
+        Only tasks with a ``start_time`` contribute to the occupied timeline.
+        The method:
+
+        1. Converts each timed task to a ``(start, end)`` interval in minutes.
+        2. Merges overlapping intervals so a run of back-to-back tasks counts
+           as one continuous block.
+        3. Scans the gaps between blocks (and the gap before the first block
+           and after the last) looking for the first one wide enough.
+
+        Returns the gap's start as an ``"HH:MM"`` string, or ``None`` if the
+        entire day is too full.
+
+        Args:
+            tasks:            Tasks already on the schedule (timed and untimed).
+            duration_minutes: How long the new task needs.
+            day_start:        Earliest the new task may start (``"HH:MM"``).
+            day_end:          Latest the new task may end (``"HH:MM"``).
+
+        Returns:
+            ``"HH:MM"`` start time for the first available slot, or ``None``.
+        """
+        day_start_min = Scheduler._to_minutes(day_start)
+        day_end_min = Scheduler._to_minutes(day_end)
+
+        # Build and sort intervals from all timed tasks
+        intervals = sorted(
+            [
+                (
+                    Scheduler._to_minutes(t.start_time),
+                    Scheduler._to_minutes(t.start_time) + t.duration_minutes,
+                )
+                for t in tasks
+                if t.start_time is not None
+            ],
+            key=lambda iv: iv[0],
+        )
+
+        # Merge overlapping/adjacent intervals into contiguous blocks
+        merged: List[Tuple[int, int]] = []
+        for start, end in intervals:
+            if merged and start <= merged[-1][1]:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+            else:
+                merged.append((start, end))
+
+        # Scan for a gap wide enough to fit duration_minutes
+        cursor = day_start_min
+        for block_start, block_end in merged:
+            gap = block_start - cursor
+            if gap >= duration_minutes:
+                return f"{cursor // 60:02d}:{cursor % 60:02d}"
+            cursor = max(cursor, block_end)
+
+        # Check the gap after the last block
+        if day_end_min - cursor >= duration_minutes:
+            return f"{cursor // 60:02d}:{cursor % 60:02d}"
+
+        return None  # No slot fits within the day

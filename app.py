@@ -240,3 +240,67 @@ if st.button("Generate schedule"):
         # --- Reasoning expander ---
         with st.expander("Why this plan?"):
             st.text(scheduler.explain_plan())
+
+        # --- Auto-assign times expander ---
+        untimed_in_plan = [t for t in plan if t.start_time is None]
+        if untimed_in_plan:
+            with st.expander(f"Auto-assign start times ({len(untimed_in_plan)} untimed task(s))"):
+                st.write(
+                    "These tasks have no start time. PawPal+ can slot them "
+                    "sequentially in priority order starting from a chosen time."
+                )
+                auto_start = st.text_input(
+                    "Day start time (HH:MM)", value="08:00", key="auto_start"
+                )
+                if st.button("Assign times", key="btn_auto"):
+                    assigned = Scheduler.auto_assign_times(plan, day_start=auto_start)
+                    st.success("Suggested timeline (no overlaps guaranteed):")
+                    st.table([
+                        {
+                            "Task": t.name,
+                            "Suggested start": t.start_time,
+                            "Duration": f"{t.duration_minutes} min",
+                            "Priority": f"P{t.priority}",
+                        }
+                        for t in assigned
+                    ])
+
+st.divider()
+
+# -------------------------------------------------------------------------
+# Section 4: Find the next free slot
+# -------------------------------------------------------------------------
+st.subheader("Step 4: Find a free slot")
+st.caption("Find out when you can fit a new task into today's existing schedule.")
+
+if st.session_state.pet and st.session_state.pet.get_tasks():
+    sc1, sc2, sc3 = st.columns(3)
+    with sc1:
+        slot_duration = st.number_input(
+            "Task duration (minutes)", min_value=1, max_value=240, value=20, key="slot_dur"
+        )
+    with sc2:
+        slot_day_start = st.text_input("Day start (HH:MM)", value="08:00", key="slot_ds")
+    with sc3:
+        slot_day_end = st.text_input("Day end (HH:MM)", value="22:00", key="slot_de")
+
+    if st.button("Find next free slot"):
+        slot = Scheduler.find_next_slot(
+            st.session_state.pet.get_tasks(),
+            duration_minutes=int(slot_duration),
+            day_start=slot_day_start,
+            day_end=slot_day_end,
+        )
+        if slot:
+            end_min = Scheduler._to_minutes(slot) + int(slot_duration)
+            st.success(
+                f"Next available **{slot_duration}-minute** slot: "
+                f"**{slot}** to **{end_min // 60:02d}:{end_min % 60:02d}**."
+            )
+        else:
+            st.warning(
+                f"No {slot_duration}-minute gap available between {slot_day_start} "
+                f"and {slot_day_end}. Try shortening the task or extending the day window."
+            )
+else:
+    st.info("Add tasks in Step 2 to use the free-slot finder.")

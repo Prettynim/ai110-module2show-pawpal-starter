@@ -35,6 +35,17 @@ When two scheduled tasks overlap in time, the app surfaces an orange `st.warning
 
 ---
 
+### Auto-assign start times *(Challenge 1)*
+`Scheduler.auto_assign_times(tasks, day_start)` takes tasks that have no `start_time` and slots them into a conflict-free timeline automatically. It sorts by priority, then walks a time cursor forward: tasks with an existing `start_time` are kept as-is (the cursor advances past their end), and untimed tasks are assigned the current cursor position before the cursor advances by their duration. Original task objects are never mutated — new copies are returned. Exposed in the UI as an **"Auto-assign start times"** expander inside the generated schedule.
+
+### Find next free slot *(Challenge 1)*
+`Scheduler.find_next_slot(tasks, duration_minutes, day_start, day_end)` answers the question "when can I fit one more task?" It converts timed tasks to `(start, end)` minute intervals, merges adjacent or overlapping blocks into contiguous occupied ranges, then scans the gaps for the first one wide enough. Returns the gap's start as `"HH:MM"`, or `None` if the day is full. Exposed as **Step 4: Find a free slot** in the UI.
+
+#### How Agent Mode was used for Challenge 1
+The two algorithms were developed in a single Agent Mode session with the full codebase in context. The prompt provided the desired behaviour contract for each method (inputs, outputs, edge cases) before asking for an implementation. Agent Mode generated both methods alongside their docstrings and test stubs in one pass, which was then reviewed against the test plan before any tests were saved. The interval-merging step in `find_next_slot` was an Agent suggestion — the original plan was a simpler scan without merging, but Agent Mode identified that adjacent back-to-back tasks would not be correctly treated as a single block without it, and supplied the merge loop. That suggestion was accepted after manually tracing through the `test_find_next_slot_gap_too_small_skips_to_next` case to confirm correctness.
+
+---
+
 ## System architecture
 
 See [`uml_final.png`](uml_final.png) for the full class diagram. Core classes:
